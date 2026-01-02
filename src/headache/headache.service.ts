@@ -33,12 +33,22 @@ export class HeadacheService {
   }
 
   async getRecordsByUser(userId: string, limit = 30) {
-    return this.headacheModel
+    console.log('Fetching headache records for userId:', userId);
+    
+    // First, let's see ALL records in the collection
+    const allRecords = await this.headacheModel.find({}).lean().exec();
+    console.log('Total records in DB:', allRecords.length);
+    if (allRecords.length > 0) {
+      console.log('Sample record userId type:', typeof allRecords[0].userId, allRecords[0].userId);
+    }
+    
+    const records = await this.headacheModel
       .find({ userId: new Types.ObjectId(userId) })
       .sort({ date: -1 })
-      .limit(limit)
       .lean()
       .exec();
+    console.log('Found headache records:', records.length);
+    return records;
   }
 
   async getRecordByDate(userId: string, date: Date) {

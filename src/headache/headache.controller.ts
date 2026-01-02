@@ -21,7 +21,9 @@ export class HeadacheController {
 
   @Post()
   async createRecord(@Request() req, @Body() dto: CreateHeadacheDto) {
-    const userId = req.user.userId;
+    console.log('CREATE - req.user._id:', req.user._id);
+    console.log('CREATE - req.user._id.toString():', req.user._id.toString());
+    const userId = req.user._id.toString();
     return this.headacheService.createRecord(
       userId,
       new Date(dto.date),
@@ -36,14 +38,17 @@ export class HeadacheController {
 
   @Get()
   async getRecords(@Request() req, @Query('limit') limit?: string) {
-    const userId = req.user.userId;
+    console.log('req.user object:', JSON.stringify(req.user, null, 2));
+    console.log('req.user._id:', req.user._id);
+    console.log('req.user._id.toString():', req.user._id.toString());
+    const userId = req.user._id.toString();
     const recordLimit = limit ? parseInt(limit, 10) : 30;
     return this.headacheService.getRecordsByUser(userId, recordLimit);
   }
 
   @Get('by-date')
   async getRecordByDate(@Request() req, @Query('date') date: string) {
-    const userId = req.user.userId;
+    const userId = req.user._id.toString();
     return this.headacheService.getRecordByDate(userId, new Date(date));
   }
 

@@ -32,23 +32,31 @@ export class HeadacheService {
     return record;
   }
 
-  async getRecordsByUser(userId: string, limit = 30) {
-    console.log('Fetching headache records for userId:', userId);
+  async getRecordsByUser(userId: string, limit = 10, page = 1) {
+    console.log('Fetching headache records for userId:', userId, 'page:', page, 'limit:', limit);
     
-    // First, let's see ALL records in the collection
-    const allRecords = await this.headacheModel.find({}).lean().exec();
-    console.log('Total records in DB:', allRecords.length);
-    if (allRecords.length > 0) {
-      console.log('Sample record userId type:', typeof allRecords[0].userId, allRecords[0].userId);
-    }
+    const skip = (page - 1) * limit;
     
-    const records = await this.headacheModel
-      .find({ userId: new Types.ObjectId(userId) })
-      .sort({ date: -1 })
-      .lean()
-      .exec();
-    console.log('Found headache records:', records.length);
-    return records;
+    const [records, total] = await Promise.all([
+      this.headacheModel
+        .find({ userId: new Types.ObjectId(userId) })
+        .sort({ date: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .exec(),
+      this.headacheModel.countDocuments({ userId: new Types.ObjectId(userId) }),
+    ]);
+    
+    console.log('Found headache records:', records.length, 'of', total);
+    
+    return {
+      data: records,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   async getRecordByDate(userId: string, date: Date) {

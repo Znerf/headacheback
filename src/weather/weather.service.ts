@@ -15,8 +15,8 @@ export class WeatherService {
     @InjectModel(WeatherRecord.name) private weatherModel: Model<WeatherRecord>,
   ) {}
 
-  // Runs every day at 5:45 PM Pacific Time
-  @Cron('45 17 * * *', {
+  // Runs every day at 12:00 AM Pacific Time
+  @Cron('0 0 * * *', {
     timeZone: 'America/Los_Angeles',
   })
   async fetchDailyWeather(): Promise<void> {
@@ -91,20 +91,68 @@ export class WeatherService {
     return response.data;
   }
 
-  async getLatestForUser(userId: string) {
-    const latest = await this.weatherModel
-      .findOne({ userId })
-      .sort({ createdAt: -1 });
+  private dayKeyInTimeZone(date: Date, timeZone: string) {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
 
-    if (!latest) {
-      return { message: 'No weather data yet. It will appear after the nightly run.' };
+    const parts = formatter.formatToParts(date);
+    const month = parts.find((p) => p.type === 'month')?.value;
+    const day = parts.find((p) => p.type === 'day')?.value;
+    const year = parts.find((p) => p.type === 'year')?.value;
+    return `${year}-${month}-${day}`;
+  }
+
+  async getLatestForUser(userId: string) {
+    const user = await this.userModel.findById(userId);
+    const loc = user?.location;
+    const timeZone = 'America/Los_Angeles';
+
+    // Try to return the latest stored record for the same day
+    const latest = await this.weatherModel.findOne({ userId }).sort({ createdAt: -1 });
+
+    if (latest) {
+      const todayKey = this.dayKeyInTimeZone(new Date(), timeZone);
+      const recordKey = this.dayKeyInTimeZone(latest.createdAt, timeZone);
+
+      if (todayKey === recordKey) {
+        return {
+          recordedAt: latest.createdAt,
+          location: latest.location,
+          weather: latest.weather,
+          provider: latest.provider,
+        };
+      }
+      this.logger.log(`Latest weather is stale (${recordKey}); fetching fresh for ${user?.email}`);
     }
 
-    return {
-      recordedAt: latest.createdAt,
-      location: latest.location,
-      weather: latest.weather,
-      provider: latest.provider,
-    };
+    if (!loc?.latitude || !loc?.longitude) {
+      return { message: 'No weather data yet. Add your location and try again.' };
+    }
+
+    this.logger.log(`No cached weather; fetching on-demand for user ${user.email}`);
+    try {
+      const weather = await this.fetchWeatherForLocation(loc.latitude, loc.longitude);
+      const created = await this.weatherModel.create({
+        userId: user._id,
+        location: loc,
+        weather,
+        provider: 'open-meteo',
+      });
+
+      return {
+        recordedAt: created.createdAt,
+        location: created.location,
+        weather: created.weather,
+        provider: created.provider,
+        message: 'Fresh weather fetched on-demand',
+      };
+    } catch (error) {
+      this.logger.error(`On-demand weather fetch failed for user ${user.email}: ${error.message}`);
+      return { message: 'Weather not available yet. Please try again later.' };
+    }
   }
 }

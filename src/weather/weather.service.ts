@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import axios from 'axios';
 import { User } from '../schemas/user.schema';
 import { WeatherRecord } from '../schemas/weather.schema';
@@ -107,52 +107,25 @@ export class WeatherService {
   }
 
   async getLatestForUser(userId: string) {
-    const user = await this.userModel.findById(userId);
-    const loc = user?.location;
     const timeZone = 'America/Los_Angeles';
+    const latest = await this.weatherModel.findOne({ userId: new Types.ObjectId(userId) }).sort({ createdAt: -1 });
 
-    // Try to return the latest stored record for the same day
-    const latest = await this.weatherModel.findOne({ userId }).sort({ createdAt: -1 });
-
-    if (latest) {
-      const todayKey = this.dayKeyInTimeZone(new Date(), timeZone);
-      const recordKey = this.dayKeyInTimeZone(latest.createdAt, timeZone);
-
-      if (todayKey === recordKey) {
-        return {
-          recordedAt: latest.createdAt,
-          location: latest.location,
-          weather: latest.weather,
-          provider: latest.provider,
-        };
-      }
-      this.logger.log(`Latest weather is stale (${recordKey}); fetching fresh for ${user?.email}`);
+    if (!latest) {
+      return { message: 'No weather data yet. It will appear after the nightly run.' };
     }
 
-    if (!loc?.latitude || !loc?.longitude) {
-      return { message: 'No weather data yet. Add your location and try again.' };
+    const todayKey = this.dayKeyInTimeZone(new Date(), timeZone);
+    const recordKey = this.dayKeyInTimeZone(latest.createdAt, timeZone);
+
+    if (todayKey !== recordKey) {
+      return { message: '2No weather data for today yet. It will appear after the nightly run.' };
     }
 
-    this.logger.log(`No cached weather; fetching on-demand for user ${user.email}`);
-    try {
-      const weather = await this.fetchWeatherForLocation(loc.latitude, loc.longitude);
-      const created = await this.weatherModel.create({
-        userId: user._id,
-        location: loc,
-        weather,
-        provider: 'open-meteo',
-      });
-
-      return {
-        recordedAt: created.createdAt,
-        location: created.location,
-        weather: created.weather,
-        provider: created.provider,
-        message: 'Fresh weather fetched on-demand',
-      };
-    } catch (error) {
-      this.logger.error(`On-demand weather fetch failed for user ${user.email}: ${error.message}`);
-      return { message: 'Weather not available yet. Please try again later.' };
-    }
+    return {
+      recordedAt: latest.createdAt,
+      location: latest.location,
+      weather: latest.weather,
+      provider: latest.provider,
+    };
   }
 }

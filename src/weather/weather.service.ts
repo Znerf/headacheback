@@ -1,0 +1,81 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import axios from 'axios';
+import { User } from '../schemas/user.schema';
+import { WeatherRecord } from '../schemas/weather.schema';
+
+@Injectable()
+export class WeatherService {
+  private readonly logger = new Logger(WeatherService.name);
+
+  constructor(
+    @InjectModel(User.name) private userModel: Model<User>,
+    @InjectModel(WeatherRecord.name) private weatherModel: Model<WeatherRecord>,
+  ) {}
+
+  // Runs every day at 12:00 AM Pacific Time
+  @Cron('0 0 * * *', {
+    timeZone: 'America/Los_Angeles',
+  })
+  async fetchDailyWeather(): Promise<void> {
+    const users = await this.userModel.find({
+      location: { $ne: null },
+      'location.latitude': { $exists: true },
+      'location.longitude': { $exists: true },
+    });
+
+    if (!users.length) {
+      this.logger.log('No users with location coordinates to fetch weather for.');
+      return;
+    }
+
+    this.logger.log(`Fetching weather for ${users.length} user(s).`);
+
+    for (const user of users) {
+      try {
+        const loc = user.location;
+        if (!loc?.latitude || !loc?.longitude) {
+          continue;
+        }
+
+        const weather = await this.fetchWeatherForLocation(loc.latitude, loc.longitude);
+
+        await this.weatherModel.create({
+          userId: user._id,
+          location: loc,
+          weather,
+          provider: 'open-meteo',
+        });
+
+        this.logger.log(`Stored weather for user ${user.email}`);
+      } catch (error) {
+        this.logger.error(`Failed to fetch weather for user ${user.email}: ${error.message}`);
+      }
+    }
+  }
+
+  private async fetchWeatherForLocation(latitude: number, longitude: number) {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,cloud_cover,wind_speed_10m,wind_direction_10m`;
+    const response = await axios.get(url, { timeout: 10000 });
+    return response.data;
+  }
+
+  async getLatestForUser(userId: string) {
+    const latest = await this.weatherModel
+      .findOne({ userId })
+      .sort({ createdAt: -1 });
+
+    if (!latest) {
+      return { message: 'No weather data yet. It will appear after the nightly run.' };
+    }
+
+    return {
+      recordedAt: latest.createdAt,
+      location: latest.location,
+      weather: latest.weather,
+      provider: latest.provider,
+    };
+  }
+}

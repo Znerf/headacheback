@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, UnauthorizedException, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException, NotFoundException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { JwtService } from '@nestjs/jwt';
@@ -9,6 +9,8 @@ import { SignUpDto, LoginDto, UpdateProfileDto } from './dto/auth.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
     private jwtService: JwtService,
@@ -126,35 +128,7 @@ export class AuthService {
     latitude?: number;
     longitude?: number;
   }) {
-    // If coordinates are already provided, trust them
-    if (latitude !== undefined && longitude !== undefined) {
-      return { city, state, country, latitude, longitude };
-    }
-
-    // If we have location text, try to geocode to get coordinates
-    const nameParts = [city, state, country].filter(Boolean);
-    if (nameParts.length === 0) {
-      return { city, state, country, latitude, longitude };
-    }
-
-    const query = encodeURIComponent(nameParts.join(', '));
-    try {
-      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${query}&count=1&language=en&format=json`;
-      const { data } = await axios.get(url, { timeout: 8000 });
-      const result = data?.results?.[0];
-      if (result) {
-        return {
-          city: city ?? result.name,
-          state: state ?? result.admin1,
-          country: country ?? result.country,
-          latitude: result.latitude,
-          longitude: result.longitude,
-        };
-      }
-    } catch (err) {
-      // Silent fail; keep provided text even if coords missing
-    }
-
+    this.logger.debug('Saving location data');
     return { city, state, country, latitude, longitude };
   }
 

@@ -20,6 +20,8 @@ export class WeatherService {
     timeZone: 'America/Los_Angeles',
   })
   async fetchDailyWeather(): Promise<void> {
+    this.logger.log('Starting nightly weather fetch job');
+
     const users = await this.userModel.find({
       location: { $ne: null },
       'location.latitude': { $exists: true },
@@ -37,8 +39,13 @@ export class WeatherService {
       try {
         const loc = user.location;
         if (!loc?.latitude || !loc?.longitude) {
+          this.logger.warn(`Skipping user ${user.email}: missing coordinates`);
           continue;
         }
+
+        this.logger.log(
+          `Fetching weather for user ${user.email} at (${loc.latitude}, ${loc.longitude})`,
+        );
 
         const weather = await this.fetchWeatherForLocation(loc.latitude, loc.longitude);
 
@@ -54,11 +61,15 @@ export class WeatherService {
         this.logger.error(`Failed to fetch weather for user ${user.email}: ${error.message}`);
       }
     }
+
+    this.logger.log('Nightly weather fetch job completed');
   }
 
   private async fetchWeatherForLocation(latitude: number, longitude: number) {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,cloud_cover,wind_speed_10m,wind_direction_10m`;
+    this.logger.debug(`Weather API request: ${url}`);
     const response = await axios.get(url, { timeout: 10000 });
+    this.logger.debug('Weather API response received');
     return response.data;
   }
 

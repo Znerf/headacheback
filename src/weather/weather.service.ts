@@ -15,8 +15,8 @@ export class WeatherService {
     @InjectModel(WeatherRecord.name) private weatherModel: Model<WeatherRecord>,
   ) {}
 
-  // Runs every day at 12:00 AM Pacific Time
-  @Cron('0 0 * * *', {
+  // Runs every day at 5:45 PM Pacific Time
+  @Cron('45 17 * * *', {
     timeZone: 'America/Los_Angeles',
   })
   async fetchDailyWeather(): Promise<void> {
@@ -66,7 +66,25 @@ export class WeatherService {
   }
 
   private async fetchWeatherForLocation(latitude: number, longitude: number) {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,cloud_cover,wind_speed_10m,wind_direction_10m`;
+    const hourlyParams = [
+      'temperature_2m',
+      'apparent_temperature',
+      'dew_point_2m',
+      'relative_humidity_2m',
+      'precipitation',
+      'wind_speed_10m',
+      'cloud_cover',
+      'pressure_msl',
+      'visibility',
+      'uv_index',
+    ].join(',');
+
+    const url =
+      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}` +
+      `&longitude=${longitude}` +
+      `&hourly=${hourlyParams}` +
+      `&timezone=auto`;
+
     this.logger.debug(`Weather API request: ${url}`);
     const response = await axios.get(url, { timeout: 10000 });
     this.logger.debug('Weather API response received');

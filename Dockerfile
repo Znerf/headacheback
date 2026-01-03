@@ -1,49 +1,44 @@
-# Build stage
-FROM node:20-alpine AS builder
+# syntax = docker/dockerfile:1
 
+# Adjust NODE_VERSION as desired
+ARG NODE_VERSION=22.21.1
+FROM node:${NODE_VERSION}-slim AS base
+
+LABEL fly_launch_runtime="NestJS"
+
+# NestJS app lives here
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
-COPY tsconfig.json ./
-COPY nest-cli.json ./
+# Set production environment
+ENV NODE_ENV="production"
+ARG YARN_VERSION=1.22.21
+RUN npm install -g yarn@$YARN_VERSION --force
 
-# Install dependencies
-RUN npm ci
 
-# Copy source code
-COPY src ./src
+# Throw-away build stage to reduce size of final image
+FROM base AS build
 
-# Build the application
-RUN npm run build
+# Install packages needed to build node modules
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y build-essential node-gyp pkg-config python-is-python3
 
-# Production stage
-FROM node:20-alpine
+# Install node modules
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile --production=false
 
-WORKDIR /app
+# Copy application code
+COPY . .
 
-# Install dumb-init for proper signal handling
-RUN apk add --no-cache dumb-init
+# Build application
+RUN yarn run build
 
-# Copy package files
-COPY package*.json ./
 
-# Install only production dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Final stage for app image
+FROM base
 
-# Copy built application from builder stage
-COPY --from=builder /app/dist ./dist
+# Copy built application
+COPY --from=build /app /app
 
-# Set NODE_ENV to production
-ENV NODE_ENV=production
-
-# Expose port
-EXPOSE 3001
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3001', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
-
-# Use dumb-init to run the app
-ENTRYPOINT ["dumb-init", "--"]
-CMD ["node", "dist/main"]
+# Start the server by default, this can be overwritten at runtime
+EXPOSE 3000
+CMD [ "yarn", "run", "start" ]
